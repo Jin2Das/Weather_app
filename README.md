@@ -9,6 +9,7 @@ This project demonstrates a simple CI/CD pipeline that automates application dep
 When changes are pushed to the main branch, GitHub Actions connects to the EC2 instance, pulls the latest configured Docker image, replaces the existing application container, and starts the updated container.
 
 Architecture
+
 Developer
     |
     | Push code to GitHub
@@ -34,6 +35,7 @@ Weather App
 Browser (HTTP :80)
 
 🛠️ Technologies Used
+
 AWS EC2 — Cloud server hosting the application
 Docker — Runs the application in a container
 Docker Hub — Stores the existing Docker image
@@ -56,6 +58,7 @@ Validation: Checks that the new container is running.
 Note: This workflow deploys an existing Docker Hub image. It does not build or publish a new image from source code.
 
 📁 Repository Structure
+
 weather-app/
 ├── .github/
 │   └── workflows/
@@ -70,6 +73,7 @@ weather-app/
 The structure above is illustrative. Adjust it to match your actual repository. The deployment workflow does not require a Dockerfile when it only pulls an existing image.
 
 🧰 Troubleshooting
+
 Problem	Possible solution
 1. Permission denied (publickey). Verify the SSH key and EC2 username.
 2. Host key verification failed. Check the verified EC2_KNOWN_HOSTS entry.
@@ -79,6 +83,7 @@ Problem	Possible solution
 6. Application is unreachable. Verify the container port, application binding, and EC2 security group.
 
 🔒 Security Considerations
+
 Store credentials in GitHub Actions Secrets.
 Restrict SSH access to trusted sources where practical.
 Grant only the necessary permissions to deployment credentials.
