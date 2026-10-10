@@ -11,6 +11,7 @@ A responsive weather application that allows users to search for a city and view
 📱 Clean and responsive user interface.
 🐳 Deploy the application using a pre-built Docker image.
 ☁️ Host the application on an AWS EC2 instance.
+
 🛠️ Technologies Used
 Frontend: Web technologies used in the application
 Backend: Node.js
