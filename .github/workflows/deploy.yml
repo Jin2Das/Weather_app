@@ -1,0 +1,87 @@
+name: Deploy Weather App
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weather-app-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to AWS EC2
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Deploy existing Docker image
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
+        run: |
+          set -eu
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+      
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+      
+          ssh-keyscan -H "$EC2_HOST" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+          # Validate required configuration
+          test -n "$EC2_HOST"
+          test -n "$EC2_USER"
+          test -n "$DOCKER_IMAGE"
+
+          # Validate the image reference before passing it to SSH
+          case "$DOCKER_IMAGE" in
+            *[!a-zA-Z0-9._:/-]*|'')
+              echo "Invalid Docker image reference"
+              exit 1
+              ;;
+          esac
+
+          ssh -i ~/.ssh/deploy_key \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            "$EC2_USER@$EC2_HOST" \
+            "bash -s -- '$DOCKER_IMAGE'" <<'REMOTE'
+              set -eu
+
+              IMAGE="$1"
+              CONTAINER="weather-app"
+
+              # Pull the existing image from Docker Hub
+              docker pull "$IMAGE"
+
+              # Replace the existing application container
+              docker stop "$CONTAINER" 2>/dev/null || true
+              docker rm "$CONTAINER" 2>/dev/null || true
+
+              docker run -d \
+                --name "$CONTAINER" \
+                --restart unless-stopped \
+                -p 80:3000 \
+                "$IMAGE"
+
+              # Confirm that the container is running
+              sleep 3
+              docker inspect \
+                --format='{{.State.Running}}' \
+                "$CONTAINER" | grep -qx true
+
+              docker ps --filter "name=weather-app"
+          REMOTE
+
+      - name: Deployment complete
+        run: echo "Deployment command completed successfully."
