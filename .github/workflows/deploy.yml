@@ -1,0 +1,119 @@
+name: Deploy Weather App
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weather-app-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to AWS EC2
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Configure SSH
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          set -eu
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          printf '%s\n' "$EC2_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+          echo "Validating SSH private key..."
+          ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null
+          echo "Private key format is valid."
+
+      - name: Deploy existing Docker image
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
+        run: |
+          set -eu
+
+          test -n "$DOCKER_IMAGE"
+
+          case "$DOCKER_IMAGE" in
+            *[!a-zA-Z0-9._:/-]*|'')
+              echo "Invalid Docker image reference"
+              exit 1
+              ;;
+          esac
+
+          ssh \
+            -i ~/.ssh/deploy_key \
+            -o IdentitiesOnly=yes \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            "$EC2_USER@$EC2_HOST" \
+            "bash -s -- '$DOCKER_IMAGE'" <<'REMOTE'
+              set -eu
+
+              IMAGE="$1"
+              CONTAINER="weather-app"
+
+              # Pull the existing Docker Hub image.
+              sudo docker pull "$IMAGE"
+
+              # Remove the previous Weather App container, if present.
+              if sudo docker container inspect "$CONTAINER" >/dev/null 2>&1; then
+                sudo docker stop "$CONTAINER" || true
+                sudo docker rm "$CONTAINER"
+              fi
+
+              # Find containers publishing host port 80.
+              # Remove only a container explicitly confirmed to be
+              # the previous Weather App deployment.
+              PORT_80_CONTAINERS=$(sudo docker ps -q --filter "publish=80")
+
+              for ID in $PORT_80_CONTAINERS; do
+                NAME=$(sudo docker inspect \
+                  --format='{{.Name}}' "$ID" | sed 's#^/##')
+
+                if [ "$NAME" = "$CONTAINER" ]; then
+                  sudo docker stop "$ID" || true
+                  sudo docker rm "$ID"
+                else
+                  echo "ERROR: Container '$NAME' is using host port 80."
+                  echo "Refusing to remove an unrecognized container."
+                  echo "Identify it and update the deployment configuration."
+                  exit 1
+                fi
+              done
+
+              # Start the new Weather App container.
+              sudo docker run -d \
+                --name "$CONTAINER" \
+                --restart unless-stopped \
+                -p 80:3000 \
+                "$IMAGE"
+
+              # Verify the container is running.
+              sleep 3
+
+              sudo docker inspect \
+                --format='{{.State.Running}}' \
+                "$CONTAINER" | grep -qx true
+
+              sudo docker ps --filter "name=weather-app"
+          REMOTE
+
+      - name: Deployment complete
+        run: echo "Weather App deployment completed."
