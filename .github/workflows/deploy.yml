@@ -20,31 +20,37 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Deploy existing Docker image
+      - name: Configure SSH
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          set -eu
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          printf '%s\n' "$EC2_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+          echo "Validating SSH private key..."
+          ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null
+          echo "Private key format is valid."
+
+      - name: Test EC2 SSH authentication
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
-          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-          EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
-          DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
         run: |
           set -eu
-      
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-      
-          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-      
-          printf '%s\n' "$EC2_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
-      
-          echo "Checking private key format..."
-          ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null
-          echo "Private key format is valid."
-      
-          echo "Testing EC2 SSH authentication..."
-          ssh -vv \
+
+          test -n "$EC2_HOST"
+          test -n "$EC2_USER"
+
+          ssh \
             -i ~/.ssh/deploy_key \
             -o IdentitiesOnly=yes \
             -o BatchMode=yes \
@@ -53,12 +59,16 @@ jobs:
             "$EC2_USER@$EC2_HOST" \
             "whoami"
 
-          # Validate required configuration
-          test -n "$EC2_HOST"
-          test -n "$EC2_USER"
+      - name: Deploy existing Docker image
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
+        run: |
+          set -eu
+
           test -n "$DOCKER_IMAGE"
 
-          # Validate the image reference before passing it to SSH
           case "$DOCKER_IMAGE" in
             *[!a-zA-Z0-9._:/-]*|'')
               echo "Invalid Docker image reference"
@@ -66,7 +76,9 @@ jobs:
               ;;
           esac
 
-          ssh -i ~/.ssh/deploy_key \
+          ssh \
+            -i ~/.ssh/deploy_key \
+            -o IdentitiesOnly=yes \
             -o BatchMode=yes \
             -o StrictHostKeyChecking=yes \
             "$EC2_USER@$EC2_HOST" \
@@ -76,20 +88,21 @@ jobs:
               IMAGE="$1"
               CONTAINER="weather-app"
 
-              # Pull the existing image from Docker Hub
+              # Pull the existing Docker Hub image.
               docker pull "$IMAGE"
 
-              # Replace the existing application container
+              # Stop and remove the old container.
               docker stop "$CONTAINER" 2>/dev/null || true
               docker rm "$CONTAINER" 2>/dev/null || true
 
+              # Start the replacement container.
               docker run -d \
                 --name "$CONTAINER" \
                 --restart unless-stopped \
                 -p 80:3000 \
                 "$IMAGE"
 
-              # Confirm that the container is running
+              # Confirm that the container is running.
               sleep 3
               docker inspect \
                 --format='{{.State.Running}}' \
@@ -99,4 +112,4 @@ jobs:
           REMOTE
 
       - name: Deployment complete
-        run: echo "Deployment command completed successfully."
+        run: echo "Weather App deployment completed."
