@@ -72,19 +72,42 @@ jobs:
               # Pull the existing Docker Hub image.
               sudo docker pull "$IMAGE"
 
-              # Stop and remove the old container.
-              sudo docker stop "$CONTAINER" 2>/dev/null || true
-              sudo docker rm "$CONTAINER" 2>/dev/null || true
+              # Remove the previous Weather App container, if present.
+              if sudo docker container inspect "$CONTAINER" >/dev/null 2>&1; then
+                sudo docker stop "$CONTAINER" || true
+                sudo docker rm "$CONTAINER"
+              fi
 
-              # Start the replacement container.
+              # Find containers publishing host port 80.
+              # Remove only a container explicitly confirmed to be
+              # the previous Weather App deployment.
+              PORT_80_CONTAINERS=$(sudo docker ps -q --filter "publish=80")
+
+              for ID in $PORT_80_CONTAINERS; do
+                NAME=$(sudo docker inspect \
+                  --format='{{.Name}}' "$ID" | sed 's#^/##')
+
+                if [ "$NAME" = "$CONTAINER" ]; then
+                  sudo docker stop "$ID" || true
+                  sudo docker rm "$ID"
+                else
+                  echo "ERROR: Container '$NAME' is using host port 80."
+                  echo "Refusing to remove an unrecognized container."
+                  echo "Identify it and update the deployment configuration."
+                  exit 1
+                fi
+              done
+
+              # Start the new Weather App container.
               sudo docker run -d \
                 --name "$CONTAINER" \
                 --restart unless-stopped \
                 -p 80:3000 \
                 "$IMAGE"
 
-              # Confirm that the container is running.
+              # Verify the container is running.
               sleep 3
+
               sudo docker inspect \
                 --format='{{.State.Running}}' \
                 "$CONTAINER" | grep -qx true
