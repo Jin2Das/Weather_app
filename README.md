@@ -18,6 +18,7 @@ Backend: Node.js
 Container Platform: Docker
 Cloud Platform: AWS EC2
 Development Tools: Visual Studio Code, Git, and GitHub
+
 🚀 Deployment
 
 The Weather App was deployed on an AWS EC2 instance using an existing Docker image. The image was used to run the application in a Docker container on the EC2 server, making the application accessible through the instance's public IP address.
