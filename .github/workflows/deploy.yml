@@ -40,25 +40,6 @@ jobs:
           ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null
           echo "Private key format is valid."
 
-      - name: Test EC2 SSH authentication
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-        run: |
-          set -eu
-
-          test -n "$EC2_HOST"
-          test -n "$EC2_USER"
-
-          ssh \
-            -i ~/.ssh/deploy_key \
-            -o IdentitiesOnly=yes \
-            -o BatchMode=yes \
-            -o StrictHostKeyChecking=yes \
-            -o ConnectTimeout=10 \
-            "$EC2_USER@$EC2_HOST" \
-            "whoami"
-
       - name: Deploy existing Docker image
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
@@ -89,14 +70,14 @@ jobs:
               CONTAINER="weather-app"
 
               # Pull the existing Docker Hub image.
-              docker pull "$IMAGE"
+              sudo docker pull "$IMAGE"
 
               # Stop and remove the old container.
-              docker stop "$CONTAINER" 2>/dev/null || true
-              docker rm "$CONTAINER" 2>/dev/null || true
+              sudo docker stop "$CONTAINER" 2>/dev/null || true
+              sudo docker rm "$CONTAINER" 2>/dev/null || true
 
               # Start the replacement container.
-              docker run -d \
+              sudo docker run -d \
                 --name "$CONTAINER" \
                 --restart unless-stopped \
                 -p 80:3000 \
@@ -104,11 +85,11 @@ jobs:
 
               # Confirm that the container is running.
               sleep 3
-              docker inspect \
+              sudo docker inspect \
                 --format='{{.State.Running}}' \
                 "$CONTAINER" | grep -qx true
 
-              docker ps --filter "name=weather-app"
+              sudo docker ps --filter "name=weather-app"
           REMOTE
 
       - name: Deployment complete
